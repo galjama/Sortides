@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestor d'Alineacions Bàsquet Formatiu FCBQ (8 Períodes)</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Vue 3 CDN -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- jsPDF & jsPDF-AutoTable per a descàrrega directa en PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    [v-cloak] {
+      display: none !important;
+    }
+    /* Ocultar barra de scroll en tires tàctils de mòbil */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 antialiased pb-8">
+  <div id="app" v-cloak class="p-2 sm:p-4 md:p-6 max-w-7xl mx-auto">
+    
+    <!-- 1. Capçalera Principal i Controls -->
+    <header class="bg-gradient-to-r from-orange-600 via-amber-600 to-amber-700 text-white rounded-2xl p-3.5 sm:p-5 shadow-lg mb-4 sm:mb-6">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4">
+        <div>
+          <div class="flex items-center gap-2.5 sm:gap-3">
+            <span class="bg-white/20 p-2 sm:p-2.5 rounded-xl text-xl sm:text-2xl flex-shrink-0">
+              <i class="fa-solid font-bold fa-basketball"></i>
+            </span>
+            <div>
+              <h1 class="text-lg sm:text-2xl md:text-3xl font-extrabold tracking-tight leading-tight">Alineacions Bàsquet FCBQ</h1>
+              <p class="text-orange-100 text-xs sm:text-sm font-medium mt-0.5">Control de reglament per a partits de 8 períodes</p>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 sm:flex sm:flex-wrap gap-1.5 sm:gap-2">
+          <button @click="resetLineups" class="bg-white/15 hover:bg-white/25 active:scale-95 text-white px-2.5 py-2.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-semibold backdrop-blur-sm transition flex items-center justify-center gap-1.5" title="Buidar caselles mantenint la plantilla">
+            <i class="fa-solid fa-rotate-left"></i> <span>Buidar</span>
+          </button>
+          <button @click="clearAll" class="bg-rose-500/85 hover:bg-rose-600 active:scale-95 text-white px-2.5 py-2.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-semibold backdrop-blur-sm transition flex items-center justify-center gap-1.5" title="Esborrar jugadors i alineacions per començar des de zero">
+            <i class="fa-solid fa-trash-can"></i> <span>Netejar</span>
+          </button>
+          <button @click="downloadPDF" class="bg-white text-orange-700 hover:bg-orange-50 active:scale-95 font-bold px-2.5 sm:px-4 py-2.5 sm:py-2 rounded-xl text-[11px] sm:text-xs shadow-sm transition flex items-center justify-center gap-1.5">
+            <i class="fa-solid fa-file-pdf text-rose-600 text-sm"></i> <span>PDF</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Notificació integrada -->
+    <transition enter-active-class="animate-in fade-in slide-in-from-top-2 duration-200" leave-active-class="animate-out fade-out slide-out-to-top-2 duration-200">
+      <div v-if="notification" class="mb-4 p-3 rounded-xl flex items-center justify-between text-xs font-semibold shadow-sm border"
+           :class="{
+             'bg-blue-50 border-blue-200 text-blue-800': notification.type === 'info',
+             'bg-amber-50 border-amber-200 text-amber-800': notification.type === 'warning',
+             'bg-emerald-50 border-emerald-200 text-emerald-800': notification.type === 'success'
+           }">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid" :class="{
+            'fa-circle-info text-blue-600': notification.type === 'info',
+            'fa-triangle-exclamation text-amber-600': notification.type === 'warning',
+            'fa-circle-check text-emerald-600': notification.type === 'success'
+          }"></i>
+          <span>{{ notification.msg }}</span>
+        </div>
+        <button @click="notification = null" class="text-slate-400 hover:text-slate-600">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+    </transition>
+
+    <!-- 2A. Controls de gestió de plantilla -->
+    <section class="bg-white rounded-2xl p-3.5 sm:p-4 shadow-sm border border-slate-200 mb-4 sm:mb-6">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center justify-between sm:justify-start gap-2">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-user-gear text-orange-600"></i>
+            <h2 class="font-bold text-slate-800 text-xs sm:text-sm uppercase tracking-wide">Plantilla ({{ players.length }} / 12)</h2>
+          </div>
+          <span v-if="players.length < 7" class="text-[11px] sm:text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+            Mínim 7 jugadors
+          </span>
+        </div>
+
+        <!-- Formulari d'alta de jugador (text-base en mòbil evita zoom automàtic a iOS) -->
+        <div class="flex items-center gap-2 w-full lg:w-auto">
+          <input v-model.number="newDorsal" type="number" inputmode="numeric" placeholder="Dorsal" class="w-20 sm:w-24 px-2.5 py-2 border border-slate-300 rounded-xl text-base sm:text-sm font-bold text-center focus:ring-2 focus:ring-orange-500 focus:outline-none" min="0" max="99" @keyup.enter="addPlayer">
+          <input v-model="newName" type="text" placeholder="Nom del jugador/a" class="flex-1 min-w-0 sm:w-56 px-3 py-2 border border-slate-300 rounded-xl text-base sm:text-sm focus:ring-2 focus:ring-orange-500 focus:outline-none" @keyup.enter="addPlayer">
+          <button @click="addPlayer" :disabled="players.length >= 12" class="bg-orange-600 hover:bg-orange-700 active:scale-95 disabled:opacity-50 text-white font-bold px-3.5 py-2 rounded-xl text-sm transition flex items-center gap-1.5 flex-shrink-0">
+            <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Afegir</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- BARRA D'EINES RÀPIDA / PINZELL D'ESTAT (No fixa per no tapar la graella en mòbil) -->
+    <section v-if="players.length > 0" class="bg-slate-900 text-white p-2 sm:p-3 rounded-2xl shadow-sm border border-slate-700 mb-3 sm:mb-4 flex flex-col lg:flex-row lg:items-center justify-between gap-2">
+      <div class="flex items-center justify-between text-[11px] sm:text-xs font-bold uppercase tracking-wide text-orange-400 px-1">
+        <span><i class="fa-solid fa-hand-pointer mr-1"></i> Mode d'edició tàctil:</span>
+        <span class="text-[10px] text-slate-400 font-normal sm:hidden">Llisca opcions →</span>
+      </div>
+      <div class="flex items-center gap-1.5 text-xs overflow-x-auto no-scrollbar pb-0.5">
+        <button @click="selectedTool = 'toggle'" 
+                :class="selectedTool === 'toggle' ? 'bg-orange-600 text-white font-extrabold ring-2 ring-orange-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'" 
+                class="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 active:scale-95">
+          <i class="fa-solid fa-bolt"></i> Normal
+        </button>
+        <button @click="selectedTool = 'start'" 
+                :class="selectedTool === 'start' ? 'bg-emerald-600 text-white font-extrabold ring-2 ring-emerald-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'" 
+                class="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 active:scale-95">
+          <span class="w-4 h-4 rounded bg-emerald-500 text-white flex items-center justify-center text-[10px]"><i class="fa-solid fa-check"></i></span> Titular
+        </button>
+        <button @click="selectedTool = 'sub_in'" 
+                :class="selectedTool === 'sub_in' ? 'bg-blue-600 text-white font-extrabold ring-2 ring-blue-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'" 
+                class="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 active:scale-95">
+          <span class="w-4 h-4 rounded bg-blue-500 text-white flex items-center justify-center text-[9px] font-black">↑</span> Entra Sub
+        </button>
+        <button @click="selectedTool = 'sub_out'" 
+                :class="selectedTool === 'sub_out' ? 'bg-indigo-600 text-white font-extrabold ring-2 ring-indigo-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'" 
+                class="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 active:scale-95" title="Només per a P7 i P8">
+          <span class="w-4 h-4 rounded bg-indigo-500 text-white flex items-center justify-center text-[9px] font-black">↓</span> Surt (P7-8)
+        </button>
+        <button @click="selectedTool = 'injury'" 
+                :class="selectedTool === 'injury' ? 'bg-amber-600 text-white font-extrabold ring-2 ring-amber-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'" 
+                class="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 active:scale-95">
+          <span class="w-4 h-4 rounded bg-amber-500 text-white flex items-center justify-center text-[10px]"><i class="fa-solid fa-user-injured"></i></span> Lesió
+        </button>
+        <button @click="selectedTool = 'foul_out'" 
+                :class="selectedTool === 'foul_out' ? 'bg-rose-600 text-white font-extrabold ring-2 ring-rose-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'" 
+                class="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 active:scale-95">
+          <span class="w-4 h-4 rounded bg-rose-600 text-white flex items-center justify-center text-[10px] font-black">5F</span> 5 Faltes
+        </button>
+        <button @click="selectedTool = 'none'" 
+                :class="selectedTool === 'none' ? 'bg-slate-500 text-white font-extrabold ring-2 ring-slate-300' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'" 
+                class="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl transition flex items-center gap-1.5 whitespace-nowrap flex-shrink-0 active:scale-95">
+          <i class="fa-solid fa-eraser"></i> Buidar
+        </button>
+      </div>
+    </section>
+
+    <!-- 2B. GRAELLA D'ALINEACIONS PANORÀMICA (100% VISIBLE EN MÒBIL SENSE SCROLL HORITZONTAL) -->
+    <main class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-4 sm:mb-6">
+      <div class="w-full overflow-x-auto">
+        <table class="w-full text-left border-collapse table-fixed lg:table-auto">
+          <thead>
+            <!-- Capçalera de zones de període -->
+            <tr class="bg-slate-800 text-white text-[9px] sm:text-xs font-bold tracking-tight sm:tracking-wider uppercase">
+              <th colspan="2" class="py-1.5 sm:py-2.5 px-1.5 sm:px-3 text-left border-r border-slate-700 w-[22%] lg:w-auto">Jug.</th>
+              <th colspan="6" class="py-1.5 sm:py-2.5 px-0.5 sm:px-2 text-center bg-orange-950/90 border-r border-slate-700 text-orange-200 w-[45%] lg:w-auto">
+                <span class="hidden sm:inline"><i class="fa-solid fa-shield-halved mr-1"></i> Períodes Regulats </span>P1-P6
+              </th>
+              <th colspan="2" class="py-1.5 sm:py-2.5 px-0.5 sm:px-2 text-center bg-slate-900 text-slate-300 border-r border-slate-700 w-[15%] lg:w-auto">
+                P7-P8
+              </th>
+              <th colspan="2" class="py-1.5 sm:py-2.5 px-0.5 sm:px-3 text-center bg-slate-950 text-white w-[18%] lg:w-auto">
+                <span class="sm:hidden">Resum</span>
+                <span class="hidden sm:inline">Resum FCBQ</span>
+              </th>
+            </tr>
+
+            <!-- Números de Períodes -->
+            <tr class="bg-slate-100 text-slate-700 text-[10px] sm:text-xs font-bold border-b border-slate-200">
+              <th class="py-1.5 sm:py-2.5 px-0.5 sm:px-1.5 w-[7%] lg:w-14 text-center border-r border-slate-200">#</th>
+              <th class="py-1.5 sm:py-2.5 px-1 sm:px-2.5 w-[15%] lg:min-w-[180px] border-r border-slate-300">Nom</th>
+              
+              <!-- P1-P6 -->
+              <th v-for="p in 6" :key="p" class="py-1 sm:py-2 px-0 sm:px-1 text-center w-[7.5%] lg:w-16 border-r border-slate-200 bg-orange-50/50">
+                <div class="font-extrabold text-slate-800 text-[10px] sm:text-sm leading-none">P{{ p }}</div>
+                <div :class="getPeriodBadgeClass(p)" class="inline-block px-1 sm:px-1.5 py-0.5 rounded text-[8px] sm:text-[10px] font-bold mt-0.5 leading-none" :title="getPeriodStatusTooltip(p)">
+                  {{ getPeriodBadgeText(p) }}
+                </div>
+              </th>
+
+              <!-- P7-P8 -->
+              <th v-for="p in [7, 8]" :key="p" class="py-1 sm:py-2 px-0 sm:px-1 text-center w-[7.5%] lg:w-16 border-r border-slate-200 bg-slate-200/60">
+                <div class="font-extrabold text-slate-800 text-[10px] sm:text-sm leading-none">P{{ p }}</div>
+                <div :class="getPeriodBadgeClass(p)" class="inline-block px-1 sm:px-1.5 py-0.5 rounded text-[8px] sm:text-[10px] font-bold mt-0.5 leading-none" :title="getPeriodStatusTooltip(p)">
+                  {{ getPeriodBadgeText(p) }}
+                </div>
+              </th>
+
+              <!-- Resums dins de RESUM FCBQ -->
+              <th class="py-1.5 sm:py-2.5 px-0.5 sm:px-2 text-center w-[9%] lg:w-20 border-r border-slate-200 bg-orange-100/50 text-orange-900">
+                P1-P6
+              </th>
+              <th class="py-1.5 sm:py-2.5 px-0.5 sm:px-2 text-center w-[9%] lg:w-20 bg-slate-200 text-slate-800">
+                Total
+              </th>
+            </tr>
+          </thead>
+          
+          <tbody class="divide-y divide-slate-200 text-xs sm:text-sm">
+            <!-- Estat buit directament utilitzable -->
+            <tr v-if="players.length === 0">
+              <td colspan="12" class="py-10 px-4 text-center text-slate-500 bg-slate-50/50">
+                <i class="fa-solid fa-user-plus text-3xl sm:text-4xl text-slate-300 mb-2.5 block"></i>
+                <p class="font-bold text-slate-800 text-sm sm:text-base">Sense jugadors registrats</p>
+                <p class="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                  Afegeix els dorsals i noms de la plantilla al formulari superior (de 7 a 12 jugadors). Es guarden automàticament al dispositiu.
+                </p>
+              </td>
+            </tr>
+
+            <tr v-for="player in players" :key="player.id" :class="getPlayerRowClass(player)" class="transition-colors">
+              
+              <!-- Dorsal -->
+              <td class="py-1 sm:py-2 px-0.5 sm:px-1 text-center font-bold text-slate-900 border-r border-slate-200">
+                <input v-model.number="player.dorsal" type="number" inputmode="numeric" min="0" max="99" class="w-full lg:w-12 text-center bg-transparent border border-transparent hover:border-slate-300 focus:border-orange-500 rounded font-black text-xs sm:text-base focus:bg-white focus:outline-none p-0">
+              </td>
+
+              <!-- Nom -->
+              <td class="py-1 sm:py-2 px-1 sm:px-2 border-r border-slate-300">
+                <div class="flex items-center justify-between gap-0.5 group">
+                  <input v-model="player.name" type="text" class="w-full min-w-0 bg-transparent border border-transparent hover:border-slate-300 focus:border-orange-500 rounded px-0.5 sm:px-1 py-0.5 font-semibold text-[11px] sm:text-sm text-slate-800 focus:bg-white focus:outline-none truncate">
+                  <button @click="removePlayer(player.id)" title="Eliminar jugador" class="hidden sm:inline-block opacity-0 group-hover:opacity-100 text-rose-500 hover:text-rose-700 p-1 rounded transition flex-shrink-0">
+                    <i class="fa-solid fa-trash-can text-xs"></i>
+                  </button>
+                </div>
+              </td>
+
+              <!-- Caselles de Períodes (P1 a P8) compactes en mòbil per veure-ho tot d'un cop d'ull -->
+              <td v-for="p in 8" :key="p" 
+                  :class="[
+                    p <= 6 ? 'bg-white/60' : 'bg-slate-100/60',
+                    'py-1 sm:py-1.5 px-0.5 sm:px-1 text-center border-r border-slate-200 cursor-pointer select-none active:bg-orange-100/70 hover:bg-slate-100/80 transition relative'
+                  ]"
+                  @click="handleCellClick(player.id, p)"
+                  @contextmenu.prevent="openCellContextMenu(player.id, p, $event)">
+                
+                <div class="flex flex-col items-center justify-center min-h-[28px] sm:min-h-[38px]">
+                  
+                  <!-- TITULAR / DES DEL COMENÇAMENT -->
+                  <span v-if="getCellStatus(player.id, p) === 'start'" class="w-6 h-6 sm:w-8 sm:h-8 rounded-md sm:rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs transition" title="Titular / Des del començament">
+                    <i class="fa-solid fa-check text-[11px] sm:text-sm"></i>
+                  </span>
+
+                  <!-- ENTRA SUBSTITUT / A MIG PERÍODE -->
+                  <span v-else-if="getCellStatus(player.id, p) === 'sub_in'" class="w-6 h-6 sm:w-8 sm:h-8 rounded-md sm:rounded-xl bg-blue-500 text-white flex flex-col items-center justify-center font-bold shadow-xs transition" title="Entra substitut (Suma com a intervingut)">
+                    <span class="text-[10px] sm:text-xs font-black leading-none">↑</span>
+                    <span class="hidden sm:inline text-[8px] font-extrabold leading-none">SUB</span>
+                  </span>
+
+                  <!-- SURT CANVIAT / A MIG PERÍODE (P7/P8) -->
+                  <span v-else-if="getCellStatus(player.id, p) === 'sub_out'" class="w-6 h-6 sm:w-8 sm:h-8 rounded-md sm:rounded-xl bg-indigo-500 text-white flex flex-col items-center justify-center font-bold shadow-xs transition" title="Titular que surt canviat a mig període">
+                    <span class="text-[10px] sm:text-xs font-black leading-none">↓</span>
+                    <span class="hidden sm:inline text-[8px] font-extrabold leading-none">CANV</span>
+                  </span>
+
+                  <!-- LESIÓ / INDISPOSICIÓ -->
+                  <span v-else-if="getCellStatus(player.id, p) === 'injury'" class="w-6 h-6 sm:w-8 sm:h-8 rounded-md sm:rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs transition" title="Lesió / Indisposició">
+                    <i class="fa-solid fa-user-injured text-[10px] sm:text-xs"></i>
+                  </span>
+
+                  <!-- 5 FALTES / DESQUALIFICAT -->
+                  <span v-else-if="getCellStatus(player.id, p) === 'foul_out'" class="w-6 h-6 sm:w-8 sm:h-8 rounded-md sm:rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold shadow-xs transition" title="5 Faltes / Desqualificat">
+                    <span class="text-[9px] sm:text-xs font-black">5F</span>
+                  </span>
+
+                  <!-- BUID -->
+                  <span v-else class="w-5 h-5 sm:w-7 sm:h-7 rounded sm:rounded-lg border border-slate-300/90 text-slate-300 flex items-center justify-center">
+                    <span class="text-[10px] sm:text-xs">•</span>
+                  </span>
+
+                </div>
+              </td>
+
+              <!-- Recompte P1-P6 per jugador (només el nombre de períodes jugats del 1 al 6) -->
+              <td class="py-1 sm:py-2 px-0.5 sm:px-1.5 text-center font-bold border-r border-slate-200 bg-orange-50/40">
+                <span :class="getPlayerP1P6CompactBadgeClass(player)">
+                  {{ getPlayerP1P6TotalPlayed(player.id) }}
+                </span>
+              </td>
+
+              <!-- Recompte Total (P1-P8) de tot el partit -->
+              <td class="py-1 sm:py-2 px-0.5 sm:px-1.5 text-center font-extrabold text-slate-800 bg-slate-100/60">
+                {{ getPlayerTotalCount(player.id) }}
+              </td>
+            </tr>
+          </tbody>
+
+          <!-- Peu de Taula amb comptatge a pista sobre 5 -->
+          <tfoot v-if="players.length > 0">
+            <tr class="bg-slate-800 text-white font-bold text-[10px] sm:text-xs">
+              <td colspan="2" class="py-2 px-1 sm:px-3 text-right uppercase tracking-tight sm:tracking-wider border-r border-slate-700">
+                Pista:
+              </td>
+              <td v-for="p in 8" :key="p" class="py-2 px-0 sm:px-1 text-center border-r border-slate-700" :class="p <= 6 ? 'bg-slate-800' : 'bg-slate-900'">
+                <span :class="{
+                  'text-emerald-400 font-black': isPeriodValidCourtCount(p),
+                  'text-rose-400 font-black': !isPeriodValidCourtCount(p)
+                }">
+                  {{ getPeriodBadgeText(p) }}
+                </span>
+              </td>
+              <td colspan="2" class="py-2 px-0.5 sm:px-3 text-center text-slate-300 font-medium text-[9px] sm:text-[11px]">
+                <span class="sm:hidden">5/5 OK</span>
+                <span class="hidden sm:inline">Requerit: 5/5 per període</span>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </main>
+
+    <!-- 3. RESUM DE VALIDACIÓ I INFRACCIÓ DETECTADA AL REGLAMENT (ARA SOTA LA GRAELLA) -->
+    <section class="mb-6">
+      <div :class="{
+        'bg-emerald-50 border-emerald-300 text-emerald-900': globalStatus === 'OK',
+        'bg-amber-50 border-amber-300 text-amber-900': globalStatus === 'WARNING',
+        'bg-rose-50 border-rose-300 text-rose-900': globalStatus === 'ERROR'
+      }" class="border-2 rounded-2xl p-4 md:p-5 shadow-sm transition-all duration-300">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="flex items-start gap-4">
+            <div :class="{
+              'bg-emerald-500 text-white': globalStatus === 'OK',
+              'bg-amber-500 text-white': globalStatus === 'WARNING',
+              'bg-rose-600 text-white': globalStatus === 'ERROR'
+            }" class="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold flex-shrink-0 shadow-md">
+              <i v-if="globalStatus === 'OK'" class="fa-solid fa-circle-check"></i>
+              <i v-if="globalStatus === 'WARNING'" class="fa-solid fa-triangle-exclamation"></i>
+              <i v-if="globalStatus === 'ERROR'" class="fa-solid fa-circle-xmark"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="text-lg font-bold">
+                  {{ globalStatus === 'OK' ? 'Alineació VÀLIDA segons reglament FCBQ' : (globalStatus === 'WARNING' ? 'Alineació En Procés / Advertències' : 'INFRACCIÓ DETECTADA AL REGLAMENT') }}
+                </h2>
+                <span class="text-xs font-bold px-2.5 py-0.5 rounded-full uppercase" :class="{
+                  'bg-emerald-200 text-emerald-800': globalStatus === 'OK',
+                  'bg-amber-200 text-amber-800': globalStatus === 'WARNING',
+                  'bg-rose-200 text-rose-800': globalStatus === 'ERROR'
+                }">
+                  {{ players.length }} Jugadors inscrits
+                </span>
+              </div>
+              <p class="text-sm opacity-90 mt-1">
+                {{ globalStatusMessage }}
+              </p>
+            </div>
+          </div>
+          <button @click="showRulesModal = true" class="self-start md:self-center text-xs font-bold underline hover:opacity-80 flex items-center gap-1.5 whitespace-nowrap">
+            <i class="fa-solid fa-circle-info"></i> Veure Reglament FCBQ
+          </button>
+        </div>
+
+        <!-- Llista de missatges detallats de validació -->
+        <div v-if="validationMessages.length > 0" class="mt-4 pt-4 border-t border-slate-200/60 space-y-1.5">
+          <div v-for="(msg, idx) in validationMessages" :key="idx" 
+               class="flex items-start gap-2 text-xs md:text-sm font-medium"
+               :class="{
+                 'text-rose-700 font-semibold': msg.type === 'error',
+                 'text-amber-800': msg.type === 'warning',
+                 'text-emerald-700': msg.type === 'info'
+               }">
+            <i :class="{
+              'fa-solid fa-circle-exclamation text-rose-600 mt-0.5': msg.type === 'error',
+              'fa-solid fa-triangle-exclamation text-amber-600 mt-0.5': msg.type === 'warning',
+              'fa-solid fa-circle-info text-emerald-600 mt-0.5': msg.type === 'info'
+            }"></i>
+            <span>{{ msg.text }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Llegenda i Instruccions d'ús -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 md:col-span-2">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3 flex items-center gap-2">
+          <i class="fa-solid fa-mouse-pointer text-orange-600"></i> Selector d'estats de cel·la
+        </h3>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+          <div class="p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-2">
+            <span class="w-6 h-6 rounded bg-emerald-600 text-white flex items-center justify-center font-bold text-xs"><i class="fa-solid fa-check"></i></span>
+            <div>
+              <div class="font-bold text-slate-800">Titular</div>
+              <div class="text-[9px] text-slate-500">Inicia el període.</div>
+            </div>
+          </div>
+          
+          <div class="p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-2">
+            <span class="w-6 h-6 rounded bg-blue-500 text-white flex items-center justify-center font-bold text-xs">↑</span>
+            <div>
+              <div class="font-bold text-slate-800">Entra Substitut</div>
+              <div class="text-[9px] text-slate-500">Entra a mig període.</div>
+            </div>
+          </div>
+
+          <div class="p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-2">
+            <span class="w-6 h-6 rounded bg-indigo-500 text-white flex items-center justify-center font-bold text-xs">↓</span>
+            <div>
+              <div class="font-bold text-slate-800">Surt Canviat</div>
+              <div class="text-[9px] text-slate-500">Inicia i surt (P7-P8).</div>
+            </div>
+          </div>
+
+          <div class="p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-2">
+            <span class="w-6 h-6 rounded bg-amber-500 text-white flex items-center justify-center font-bold text-xs"><i class="fa-solid fa-user-injured"></i></span>
+            <div>
+              <div class="font-bold text-slate-800">Lesió</div>
+              <div class="text-[9px] text-slate-500">Inicia i es lesiona.</div>
+            </div>
+          </div>
+
+          <div class="p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center gap-2">
+            <span class="w-6 h-6 rounded bg-rose-600 text-white flex items-center justify-center font-bold text-xs">5F</span>
+            <div>
+              <div class="font-bold text-slate-800">5 Faltes</div>
+              <div class="text-[9px] text-slate-500">Eliminat del partit.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-gradient-to-br from-slate-800 to-slate-900 text-white p-4 rounded-2xl shadow-sm flex flex-col justify-between">
+        <div>
+          <h3 class="text-xs font-bold uppercase tracking-wider text-orange-400 mb-2 flex items-center gap-2">
+            <i class="fa-solid fa-book-bookmark"></i> Resum Reglament FCBQ
+          </h3>
+          <ul class="text-xs space-y-1 text-slate-300">
+            <li>• <strong>P1 a P6:</strong> Mínim 2 titulars i màxim 5 intervinguts.</li>
+            <li>• <strong>Lesió/5F:</strong> Si es marca, s'obre selecció de substitut (↑).</li>
+            <li>• <strong>P7 i P8:</strong> Canvis lliures (↑ Entra / ↓ Surt).</li>
+          </ul>
+        </div>
+        <button @click="showRulesModal = true" class="mt-3 text-xs bg-orange-600 hover:bg-orange-500 font-bold py-1 px-3 rounded-xl transition text-center w-full">
+          Detalls del Reglament
+        </button>
+      </div>
+    </section>
+
+    <!-- MENÚ CONTEXTUAL DE CASELLA -->
+    <div v-if="activeCellMenu" class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4" @click.self="activeCellMenu = null">
+      <div class="bg-white rounded-2xl shadow-2xl p-5 max-w-xs w-full animate-in fade-in zoom-in duration-150">
+        <div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-100">
+          <h3 class="font-extrabold text-slate-800 text-sm">
+            Jugador #{{ getPlayerById(activeCellMenu.playerId)?.dorsal }} - Període P{{ activeCellMenu.period }}
+          </h3>
+          <button @click="activeCellMenu = null" class="text-slate-400 hover:text-slate-600 text-sm font-bold">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <p class="text-xs text-slate-500 mb-4">Selecciona l'estat d'actuació del jugador/a en aquest període:</p>
+        
+        <div class="space-y-2">
+          <button @click="setCellStatus(activeCellMenu.playerId, activeCellMenu.period, 'start')" class="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-emerald-500 hover:bg-emerald-50 flex items-center gap-3 transition">
+            <span class="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs"><i class="fa-solid fa-check"></i></span>
+            <div>
+              <div class="text-xs font-bold text-slate-800">Titular (Inici)</div>
+              <div class="text-[10px] text-slate-500">Inicia el període des del començament</div>
+            </div>
+          </button>
+
+          <button @click="setCellStatus(activeCellMenu.playerId, activeCellMenu.period, 'sub_in')" class="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50 flex items-center gap-3 transition">
+            <span class="w-7 h-7 rounded-lg bg-blue-500 text-white flex items-center justify-center font-bold text-xs">↑</span>
+            <div>
+              <div class="text-xs font-bold text-slate-800">Entra Substitut (A mig període)</div>
+              <div class="text-[10px] text-slate-500">Entra per cobrir una lesió, 5F o canvi de banqueta</div>
+            </div>
+          </button>
+
+          <button v-if="activeCellMenu.period >= 7" @click="setCellStatus(activeCellMenu.playerId, activeCellMenu.period, 'sub_out')" class="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 flex items-center gap-3 transition">
+            <span class="w-7 h-7 rounded-lg bg-indigo-500 text-white flex items-center justify-center font-bold text-xs">↓</span>
+            <div>
+              <div class="text-xs font-bold text-slate-800">Surt Canviat (A mig període)</div>
+              <div class="text-[10px] text-slate-500">Inicia el període i va a la banqueta (P7/P8)</div>
+            </div>
+          </button>
+
+          <button @click="setCellStatus(activeCellMenu.playerId, activeCellMenu.period, 'injury')" class="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-amber-500 hover:bg-amber-50 flex items-center gap-3 transition">
+            <span class="w-7 h-7 rounded-lg bg-amber-500 text-white flex items-center justify-center font-bold text-xs"><i class="fa-solid fa-user-injured"></i></span>
+            <div>
+              <div class="text-xs font-bold text-slate-800">Lesió / Indisposició</div>
+              <div class="text-[10px] text-slate-500">Obre selecció de substitut de banqueta</div>
+            </div>
+          </button>
+
+          <button @click="setCellStatus(activeCellMenu.playerId, activeCellMenu.period, 'foul_out')" class="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-rose-500 hover:bg-rose-50 flex items-center gap-3 transition">
+            <span class="w-7 h-7 rounded-lg bg-rose-600 text-white flex items-center justify-center font-bold text-xs">5F</span>
+            <div>
+              <div class="text-xs font-bold text-slate-800">5 Faltes / Desqualificació</div>
+              <div class="text-[10px] text-slate-500">Obre selecció de substitut de banqueta</div>
+            </div>
+          </button>
+
+          <button @click="setCellStatus(activeCellMenu.playerId, activeCellMenu.period, 'none')" class="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 flex items-center gap-3 transition">
+            <span class="w-7 h-7 rounded-lg border border-slate-300 text-slate-400 flex items-center justify-center font-bold text-xs"><i class="fa-solid fa-ban"></i></span>
+            <div>
+              <div class="text-xs font-bold text-slate-700">No Juga / Banqueta</div>
+              <div class="text-[10px] text-slate-500">Desmarcar casella</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL AUTOMÀTIC DE SUBSTITUCIÓ PER LESIÓ O 5 FALTES -->
+    <div v-if="subModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4" @click.self="subModal = null">
+      <div class="bg-white rounded-2xl shadow-2xl p-5 md:p-6 max-w-md w-full animate-in fade-in zoom-in duration-150 border-t-4"
+           :class="subModal.reason === 'foul_out' ? 'border-rose-600' : 'border-amber-500'">
+        <div class="flex justify-between items-start gap-3 mb-3 pb-3 border-b border-slate-100">
+          <div class="flex items-center gap-2.5">
+            <span class="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0"
+                  :class="subModal.reason === 'foul_out' ? 'bg-rose-600' : 'bg-amber-500'">
+              <i v-if="subModal.reason === 'injury'" class="fa-solid fa-user-injured"></i>
+              <span v-else class="text-xs font-black">5F</span>
+            </span>
+            <div>
+              <h3 class="font-extrabold text-slate-900 text-sm md:text-base leading-tight">
+                Substitució obligatòria (Període P{{ subModal.period }})
+              </h3>
+              <p class="text-xs text-slate-500 mt-0.5">
+                Surt <strong>#{{ subModal.outPlayer?.dorsal }} {{ subModal.outPlayer?.name }}</strong>
+                ({{ subModal.reason === 'foul_out' ? '5 Faltes / Desqualificat' : 'Lesió / Indisposició' }})
+              </p>
+            </div>
+          </div>
+          <button @click="subModal = null" class="text-slate-400 hover:text-slate-600 p-1">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <p class="text-xs font-semibold text-slate-700 mb-2.5">
+          Selecciona el jugador/a disponible de la banqueta que entra a pista:
+        </p>
+
+        <!-- Llista de jugadors disponibles segons normativa -->
+        <div v-if="eligibleSubstitutes.length > 0" class="space-y-2 max-h-64 overflow-y-auto pr-1">
+          <button v-for="cand in eligibleSubstitutes" :key="cand.id"
+                  @click="confirmSubstituteSelection(cand.id)"
+                  class="w-full text-left p-2.5 rounded-xl border border-slate-200 hover:border-blue-500 hover:bg-blue-50/70 flex items-center justify-between gap-2 transition group">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <span class="w-8 h-8 rounded-lg bg-slate-800 group-hover:bg-blue-600 text-white font-black text-sm flex items-center justify-center flex-shrink-0 transition">
+                {{ cand.dorsal }}
+              </span>
+              <div class="truncate">
+                <div class="font-bold text-slate-800 text-sm truncate">{{ cand.name }}</div>
+                <div class="text-[11px] text-slate-500 flex items-center gap-2 mt-0.5">
+                  <span>P1-P6: <strong>{{ getPlayerStartedP1P6Count(cand.id) }}</strong> inic. / <strong>{{ getPlayerP1P6TotalPlayed(cand.id) }}</strong> interv.</span>
+                </div>
+              </div>
+            </div>
+            <div class="flex flex-col items-end flex-shrink-0 gap-1">
+              <span v-if="subModal.period <= 6 && getPlayerStartedP1P6Count(cand.id) < 2"
+                    class="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                Falten titulars ({{ getPlayerStartedP1P6Count(cand.id) }}/2)
+              </span>
+              <span v-else class="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                Disponible
+              </span>
+              <span class="text-[11px] font-bold text-blue-600 group-hover:underline">
+                Entrar ↑
+              </span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Estat si no hi ha cap jugador disponible reglamentàriament -->
+        <div v-else class="p-4 rounded-xl bg-rose-50 border border-rose-200 text-center">
+          <i class="fa-solid fa-triangle-exclamation text-rose-600 text-xl mb-1.5"></i>
+          <p class="text-xs font-bold text-rose-900">No hi ha cap jugador disponible a la banqueta que compleixi el reglament per entrar a P{{ subModal.period }}.</p>
+          <p class="text-[11px] text-rose-700 mt-1">Tots els altres jugadors ja estan a pista, han arribat al màxim de 5 períodes en P1-P6 o estan eliminats.</p>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-slate-100 flex justify-end">
+          <button @click="subModal = null" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition">
+            Tancar sense substituir ara
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL DETALL NORMATIVA FCBQ -->
+    <div v-if="showRulesModal" style="z-index: 9999;" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4" @click.self="showRulesModal = false">
+      <div class="bg-white rounded-2xl shadow-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+        <div class="flex justify-between items-center mb-4 pb-3 border-b border-slate-200">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-shield-halved text-orange-600 text-xl"></i>
+            <h2 class="text-lg font-extrabold text-slate-900">Normativa d'Alineacions FCBQ (8 Períodes)</h2>
+          </div>
+          <button type="button" @click.stop="showRulesModal = false" class="text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 w-8 h-8 rounded-full flex items-center justify-center transition">
+            <i class="fa-solid fa-xmark text-base"></i>
+          </button>
+        </div>
+
+        <div class="space-y-4 text-xs md:text-sm text-slate-700 leading-relaxed">
+          <div class="bg-orange-50 p-3.5 rounded-xl border border-orange-200">
+            <h4 class="font-bold text-orange-900 mb-1">Norma Principal d'Alineació (P1 a P6):</h4>
+            <p>Tots els jugadors jugaran des del començament un <strong>mínim de dos períodes</strong> i un <strong>màxim de cinc</strong> durant els sis primers períodes.</p>
+          </div>
+
+          <ul class="space-y-2 list-disc pl-5">
+            <li>
+              <strong>Compte de períodes màxims:</strong> Es considera que un jugador ha intervingut en un període quan hi actua, ni que sigui durant un mínim de temps (titular, substitut que entra o que surt).
+            </li>
+            <li>
+              <strong>Lesió / Indisposició:</strong> Si un jugador es lesiona i s'aporta un substitut (↑), es mantenen 5 a pista. Si posteriorment es recupera i torna a jugar, es considera que va jugar <strong>un període complet des del començament (titular)</strong> en aquell en què es va lesionar.
+            </li>
+            <li>
+              <strong>5 Faltes o Desqualificació:</strong> Si no finalitza per 5 faltes o desqualificació, l'alineació es considera vàlida encara que no hagi disputat els 2 períodes mínims. Un jugador amb 5 faltes no pot tornar a jugar.
+            </li>
+            <li>
+              <strong>Setè, vuitè període i pròrrogues:</strong> L'alineació i les substitucions als setè i vuitè períodes són completament lliures (utilitzant ↑ per als que entren i ↓ per als que surten).
+            </li>
+          </ul>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-slate-200 flex justify-end">
+          <button type="button" @click.stop="showRulesModal = false" class="bg-slate-900 text-white font-bold px-5 py-2.5 rounded-xl text-xs hover:bg-slate-800 transition cursor-pointer">
+            Tancar
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const { createApp, ref, computed, reactive, watch } = Vue;
+
+    createApp({
+      setup() {
+        const notification = ref(null);
+        const selectedTool = ref('toggle');
+
+        const showNotification = (msg, type = 'info') => {
+          notification.value = { msg, type };
+          setTimeout(() => {
+            if (notification.value && notification.value.msg === msg) {
+              notification.value = null;
+            }
+          }, 3500);
+        };
+
+        // Carregar estat inicial des de localStorage
+        const loadSavedState = () => {
+          try {
+            const savedPlayers = localStorage.getItem('fcbq_players');
+            const savedLineups = localStorage.getItem('fcbq_lineups');
+            return {
+              players: savedPlayers ? JSON.parse(savedPlayers) : [],
+              lineups: savedLineups ? JSON.parse(savedLineups) : {}
+            };
+          } catch (e) {
+            return { players: [], lineups: {} };
+          }
+        };
+
+        const initialState = loadSavedState();
+        const players = ref(initialState.players);
+        const lineups = reactive(initialState.lineups);
+
+        // Desament automàtic a localStorage
+        const saveState = () => {
+          try {
+            localStorage.setItem('fcbq_players', JSON.stringify(players.value));
+            localStorage.setItem('fcbq_lineups', JSON.stringify(lineups));
+          } catch (e) {
+            console.error('Error guardant a localStorage', e);
+          }
+        };
+
+        watch(players, () => saveState(), { deep: true });
+        watch(lineups, () => saveState(), { deep: true });
+
+        const newDorsal = ref('');
+        const newName = ref('');
+        const activeCellMenu = ref(null);
+        const subModal = ref(null);
+        const showRulesModal = ref(false);
+
+        // Funcions de plantilla
+        const addPlayer = () => {
+          if (players.value.length >= 12) {
+            showNotification('El màxim permès és 12 jugadors per plantilla.', 'warning');
+            return;
+          }
+          if (newDorsal.value === '' || !newName.value.trim()) return;
+
+          const newId = Date.now().toString();
+          players.value.push({
+            id: newId,
+            dorsal: Number(newDorsal.value),
+            name: newName.value.trim()
+          });
+
+          newDorsal.value = '';
+          newName.value = '';
+          showNotification('Jugador/a afegit correctament.', 'success');
+        };
+
+        const removePlayer = (id) => {
+          players.value = players.value.filter(p => p.id !== id);
+          for (let p = 1; p <= 8; p++) {
+            delete lineups[`${id}_${p}`];
+          }
+          showNotification('Jugador/a eliminat.', 'info');
+        };
+
+        const resetLineups = () => {
+          Object.keys(lineups).forEach(k => delete lineups[k]);
+          showNotification('S\'ha buidat la graella mantenint la plantilla.', 'info');
+        };
+
+        const clearAll = () => {
+          Object.keys(lineups).forEach(k => delete lineups[k]);
+          players.value = [];
+          localStorage.removeItem('fcbq_players');
+          localStorage.removeItem('fcbq_lineups');
+          showNotification('S\'ha esborrat tota la informació.', 'info');
+        };
+
+        // Gestió de Cel·les i Estats
+        const getCellStatus = (playerId, period) => lineups[`${playerId}_${period}`] || 'none';
+
+        const setCellStatus = (playerId, period, status) => {
+          if (status === 'none') {
+            delete lineups[`${playerId}_${period}`];
+          } else {
+            lineups[`${playerId}_${period}`] = status;
+          }
+          activeCellMenu.value = null;
+
+          // Si el jugador és expulsat (5F), eliminar automàticament tots els períodes posteriors
+          if (status === 'foul_out') {
+            let removedFuture = false;
+            for (let nextP = period + 1; nextP <= 8; nextP++) {
+              if (lineups[`${playerId}_${nextP}`]) {
+                delete lineups[`${playerId}_${nextP}`];
+                removedFuture = true;
+              }
+            }
+            if (removedFuture) {
+              showNotification(`S'han esborrat els períodes posteriors a P${period} perquè el jugador/a ha estat eliminat.`, 'warning');
+            }
+          }
+
+          // Obrir finestra modal automàtica per seleccionar substitut en cas de Lesió o 5 Faltes
+          if (status === 'injury' || status === 'foul_out') {
+            const outPlayer = getPlayerById(playerId);
+            subModal.value = {
+              outPlayerId: playerId,
+              outPlayer,
+              period,
+              reason: status
+            };
+          }
+        };
+
+        const confirmSubstituteSelection = (subPlayerId) => {
+          if (!subModal.value) return;
+          const { period } = subModal.value;
+          lineups[`${subPlayerId}_${period}`] = 'sub_in';
+          const subPlayer = getPlayerById(subPlayerId);
+          showNotification(`#${subPlayer?.dorsal} ${subPlayer?.name} entra com a substitut a P${period}.`, 'success');
+          subModal.value = null;
+        };
+
+        // Jugadors disponibles per entrar en substitució segons normativa FCBQ
+        const eligibleSubstitutes = computed(() => {
+          if (!subModal.value) return [];
+          const targetPeriod = subModal.value.period;
+
+          return players.value.filter(p => {
+            // 1. No pot estar ja jugant o actuant en aquest mateix període
+            const currentStatus = getCellStatus(p.id, targetPeriod);
+            if (currentStatus !== 'none') return false;
+
+            // 2. No pot haver estat eliminat per 5 faltes / desqualificació en un període anterior
+            for (let prev = 1; prev < targetPeriod; prev++) {
+              if (getCellStatus(p.id, prev) === 'foul_out') return false;
+            }
+
+            // 3. Si en P1-P6 ja ha intervingut en 5 períodes, no pot entrar perquè superaria el màxim
+            if (targetPeriod <= 6) {
+              const p1p6Intervened = getPlayerP1P6TotalPlayed(p.id);
+              if (p1p6Intervened >= 5) return false;
+            }
+
+            return true;
+          });
+        });
+
+        const handleCellClick = (playerId, period) => {
+          if (selectedTool.value === 'toggle') {
+            const current = getCellStatus(playerId, period);
+            if (current === 'none') {
+              setCellStatus(playerId, period, 'start');
+            } else {
+              setCellStatus(playerId, period, 'none');
+            }
+          } else {
+            setCellStatus(playerId, period, selectedTool.value);
+          }
+        };
+
+        const openCellContextMenu = (playerId, period) => {
+          activeCellMenu.value = { playerId, period };
+        };
+
+        const getPlayerById = (id) => players.value.find(p => p.id === id);
+
+        // COMPTATGE D'ALINEACIÓ A PISTA (Inici i Final)
+        const getPeriodStartCourtCount = (period) => {
+          let count = 0;
+          players.value.forEach(p => {
+            const st = getCellStatus(p.id, period);
+            if (['start', 'sub_out', 'injury', 'foul_out'].includes(st)) {
+              count++;
+            }
+          });
+          return count;
+        };
+
+        const getPeriodEndCourtCount = (period) => {
+          let count = 0;
+          players.value.forEach(p => {
+            const st = getCellStatus(p.id, period);
+            if (['start', 'sub_in'].includes(st)) {
+              count++;
+            }
+          });
+          return count;
+        };
+
+        const getPeriodSubInCount = (period) => {
+          let count = 0;
+          players.value.forEach(p => {
+            if (getCellStatus(p.id, period) === 'sub_in') count++;
+          });
+          return count;
+        };
+
+        const getPeriodSubOutCount = (period) => {
+          let count = 0;
+          players.value.forEach(p => {
+            const st = getCellStatus(p.id, period);
+            if (['sub_out', 'injury', 'foul_out'].includes(st)) count++;
+          });
+          return count;
+        };
+
+        const isPeriodValidCourtCount = (period) => {
+          return getPeriodStartCourtCount(period) === 5 && getPeriodEndCourtCount(period) === 5;
+        };
+
+        const getPeriodBadgeText = (period) => {
+          const start = getPeriodStartCourtCount(period);
+          const end = getPeriodEndCourtCount(period);
+          if (start === end) {
+            return `${end}/5`;
+          }
+          return `${start}→${end}/5`;
+        };
+
+        const getPeriodShortBadgeText = (period) => {
+          return getPeriodBadgeText(period);
+        };
+
+        const getPeriodBadgeClass = (period) => {
+          if (isPeriodValidCourtCount(period)) return 'bg-emerald-600 text-white';
+          return 'bg-rose-600 text-white';
+        };
+
+        const getPeriodStatusTooltip = (period) => {
+          const start = getPeriodStartCourtCount(period);
+          const end = getPeriodEndCourtCount(period);
+          if (start === 5 && end === 5) return 'Alineació de 5 jugadors a pista correcta';
+          return `Atenció: ${start} jugadors a l'inici i ${end} al final (cal 5/5)`;
+        };
+
+        // RECOMPTES SEGONS REGLAMENT FCBQ PER JUGADOR
+        const hasPlayedAfterPeriod = (playerId, periodNum) => {
+          for (let p = periodNum + 1; p <= 8; p++) {
+            const st = getCellStatus(playerId, p);
+            if (['start', 'sub_in', 'sub_out', 'injury', 'foul_out'].includes(st)) {
+              return true;
+            }
+          }
+          return false;
+        };
+
+        // Recompte de períodes intervinguts en P1-P6 (per al MÀXIM de 5)
+        const getPlayerP1P6TotalPlayed = (playerId) => {
+          let count = 0;
+          for (let p = 1; p <= 6; p++) {
+            const st = getCellStatus(playerId, p);
+            if (['start', 'sub_in', 'sub_out', 'injury', 'foul_out'].includes(st)) {
+              count++;
+            }
+          }
+          return count;
+        };
+
+        // Recompte de períodes iniciats des del començament en P1-P6 (per al MÍNIM de 2)
+        const getPlayerStartedP1P6Count = (playerId) => {
+          let count = 0;
+          for (let p = 1; p <= 6; p++) {
+            const st = getCellStatus(playerId, p);
+            if (['start', 'sub_out'].includes(st)) {
+              count++;
+            } else if (st === 'injury') {
+              if (hasPlayedAfterPeriod(playerId, p)) {
+                count++;
+              }
+            }
+          }
+          return count;
+        };
+
+        const getPlayerTotalCount = (playerId) => {
+          let count = 0;
+          for (let p = 1; p <= 8; p++) {
+            const st = getCellStatus(playerId, p);
+            if (['start', 'sub_in', 'sub_out', 'injury', 'foul_out'].includes(st)) {
+              count++;
+            }
+          }
+          return count;
+        };
+
+        // COMPROVACIÓ D'EXEMPCIONS I INFRACCIONS INDIVIDUALS
+        const getPlayerValidation = (player) => {
+          const p1p6Total = getPlayerP1P6TotalPlayed(player.id);
+          const p1p6Started = getPlayerStartedP1P6Count(player.id);
+
+          // 1. Infracció de 5 faltes: No pot alinear-se DESPRÉS d'haver comès 5 faltes
+          let fouledOutPeriod = null;
+          for (let p = 1; p <= 8; p++) {
+            if (getCellStatus(player.id, p) === 'foul_out') {
+              fouledOutPeriod = p;
+              break;
+            }
+          }
+          if (fouledOutPeriod !== null && hasPlayedAfterPeriod(player.id, fouledOutPeriod)) {
+            return {
+              status: 'ERROR',
+              message: `Infracció: Un jugador expulsat per 5 faltes a P${fouledOutPeriod} no pot tornar a jugar.`,
+              shortMsg: `Infracció: Elim. a P${fouledOutPeriod}`
+            };
+          }
+
+          // 2. Infracció de màxim 5 períodes intervinguts en P1-P6
+          if (p1p6Total > 5) {
+            return {
+              status: 'ERROR',
+              message: `Infracció: Supera el màxim permès (${p1p6Total}/5 períodes en P1-P6).`,
+              shortMsg: `Màx 5 superat (${p1p6Total}/5)`
+            };
+          }
+
+          // 3. Exempció per 5 Faltes o Lesió no recuperada
+          let isFoulOutExempt = fouledOutPeriod !== null;
+          let isInjuryExempt = false;
+          for (let p = 1; p <= 6; p++) {
+            if (getCellStatus(player.id, p) === 'injury' && !hasPlayedAfterPeriod(player.id, p)) {
+              isInjuryExempt = true;
+              break;
+            }
+          }
+
+          if (isFoulOutExempt || isInjuryExempt) {
+            return {
+              status: 'OK',
+              message: `Alineació vàlida (Exempt de mínim per ${isFoulOutExempt ? '5 Faltes' : 'Lesió no recuperada'}).`,
+              shortMsg: `Exempt (${isFoulOutExempt ? '5F' : 'Lesió'})`
+            };
+          }
+
+          // 4. Mínim de 2 períodes iniciats en P1-P6
+          if (p1p6Started >= 2) {
+            return {
+              status: 'OK',
+              message: `Alineació vàlida (${p1p6Started} períodes titulars en P1-P6).`,
+              shortMsg: 'Mínim completat'
+            };
+          } else {
+            let potentialPeriods = 0;
+            for (let p = 1; p <= 6; p++) {
+              if (getCellStatus(player.id, p) === 'none' && getPeriodStartCourtCount(p) < 5) {
+                potentialPeriods++;
+              }
+            }
+
+            if (p1p6Started + potentialPeriods < 2) {
+              return {
+                status: 'ERROR',
+                message: `Infracció: Només ha iniciat ${p1p6Started} període(s) titular en P1-P6 i ja no hi ha períodes suficients disponibles per arribar a 2.`,
+                shortMsg: `Infracció Mínim (${p1p6Started}/2)`
+              };
+            }
+
+            return {
+              status: 'WARNING',
+              message: `Pendent de complir el mínim de 2 períodes titulars en P1-P6 (actual: ${p1p6Started}/2).`,
+              shortMsg: `Pendent (${p1p6Started}/2 titular)`
+            };
+          }
+        };
+
+        // VALIDACIÓ GLOBAL
+        const validationMessages = computed(() => {
+          const msgs = [];
+
+          if (players.value.length < 7 || players.value.length > 12) {
+            msgs.push({
+              type: 'error',
+              text: `Nombre de jugadors inscrits (${players.value.length}) fora del reglament (requerit de 7 a 12).`
+            });
+          }
+
+          for (let p = 1; p <= 8; p++) {
+            const start = getPeriodStartCourtCount(p);
+            const end = getPeriodEndCourtCount(p);
+            const subIn = getPeriodSubInCount(p);
+            const subOut = getPeriodSubOutCount(p);
+
+            if (start !== 5 || end !== 5) {
+              if (start < 5) {
+                msgs.push({
+                  type: 'error',
+                  text: `Període P${p}: Falten jugadors a l'inici (${start}/5 jugadors).`
+                });
+              } else if (start > 5) {
+                msgs.push({
+                  type: 'error',
+                  text: `Període P${p}: Més de 5 jugadors a l'inici (${start}/5 jugadors).`
+                });
+              }
+
+              if (end < 5) {
+                msgs.push({
+                  type: 'error',
+                  text: `Període P${p}: Falten jugadors al final del període (${end}/5 jugadors). S'ha d'afegir un substitut (↑) per cobrir una lesió, 5F o canvi.`
+                });
+              } else if (end > 5) {
+                msgs.push({
+                  type: 'error',
+                  text: `Període P${p}: Més de 5 jugadors al final (${end}/5). S'ha marcat un substitut (↑) sense desmarcar o marcar quin titular surt canviat (↓).`
+                });
+              }
+            } else if (subIn !== subOut) {
+              msgs.push({
+                type: 'warning',
+                text: `Període P${p}: Descompensació en canvis (${subIn} entren / ${subOut} surten). Verifica la coherència dels canvis.`
+              });
+            }
+          }
+
+          players.value.forEach(p => {
+            const val = getPlayerValidation(p);
+            if (val.status === 'ERROR') {
+              msgs.push({
+                type: 'error',
+                text: `Dorsal #${p.dorsal} (${p.name}): ${val.message}`
+              });
+            } else if (val.status === 'WARNING') {
+              msgs.push({
+                type: 'warning',
+                text: `Dorsal #${p.dorsal} (${p.name}): ${val.message}`
+              });
+            }
+          });
+
+          return msgs;
+        });
+
+        const globalStatus = computed(() => {
+          if (validationMessages.value.some(m => m.type === 'error')) return 'ERROR';
+          if (validationMessages.value.some(m => m.type === 'warning')) return 'WARNING';
+          return 'OK';
+        });
+
+        const globalStatusMessage = computed(() => {
+          if (globalStatus.value === 'OK') {
+            return 'Alineació 100% reglamentària segons les normes FCBQ. 5 jugadors a pista a l\'inici i final de cada període i requeriments de mínims/màxims assolits.';
+          } else if (globalStatus.value === 'WARNING') {
+            return 'Alineació en procés de construcció. Queden jugadors pendents d\'assolir els 2 períodes titulars en P1-P6.';
+          } else {
+            return 'Atenció: S\'han detectat incompliments del reglament FCBQ que suposarien la pèrdua del partit.';
+          }
+        });
+
+        // Estats visuals (Tant ERROR com WARNING / Pendent titular marquen tota la fila en vermell)
+        const getPlayerRowClass = (player) => {
+          const val = getPlayerValidation(player);
+          if (val.status === 'ERROR' || val.status === 'WARNING') {
+            return 'bg-rose-100/80 hover:bg-rose-100';
+          }
+          return 'hover:bg-slate-50';
+        };
+
+        // Fons opac per a les cel·les fixes (sticky) en mòbil perquè no se superposi el text al desplaçar
+        const getStickyCellBg = (player) => {
+          const val = getPlayerValidation(player);
+          if (val.status === 'ERROR' || val.status === 'WARNING') return 'bg-rose-100';
+          return 'bg-white';
+        };
+
+        const getPlayerP1P6BadgeClass = (player) => {
+          const val = getPlayerValidation(player);
+          if (val.status === 'ERROR' || val.status === 'WARNING') {
+            return 'bg-rose-600 text-white px-2 py-0.5 rounded-full text-xs font-bold';
+          }
+          return 'bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-xs font-bold';
+        };
+
+        const getPlayerP1P6CompactBadgeClass = (player) => {
+          const val = getPlayerValidation(player);
+          if (val.status === 'ERROR' || val.status === 'WARNING') {
+            return 'bg-rose-600 text-white px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-xs font-bold inline-block';
+          }
+          return 'bg-emerald-100 text-emerald-800 px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-xs font-bold inline-block';
+        };
+
+        // DESCÀRREGA DIRECTA EN PDF D'1 SOLA PÀGINA A PANTALLA COMPLETA (A4 HORITZONTAL)
+        const downloadPDF = () => {
+          try {
+            if (!window.jspdf || !window.jspdf.jsPDF) {
+              showNotification('Error carregant la llibreria PDF. Comprova la connexió a internet.', 'warning');
+              return;
+            }
+
+            const { jsPDF } = window.jspdf;
+            // Format A4 Horitzontal (297mm x 210mm)
+            const doc = new jsPDF({
+              orientation: 'landscape',
+              unit: 'mm',
+              format: 'a4'
+            });
+
+            const pageWidth = doc.internal.pageSize.getWidth();   // 297 mm
+            const pageHeight = doc.internal.pageSize.getHeight(); // 210 mm
+            const margin = 4; // Marges mínims de 4mm per ocupar el màxim possible del full
+
+            // Sempre 12 files de jugadors per omplir tota la pàgina
+            const totalPlayerRows = Math.max(12, players.value.length);
+            const availableHeight = pageHeight - (margin * 2);
+            // 1 fila capçalera + 12 files jugadors = 13 files totals (sense fila de peu)
+            const totalTableRows = totalPlayerRows + 1;
+            const rowHeight = availableHeight / totalTableRows;
+
+            const head = [[
+              'DOR',
+              'NOM I COGNOMS JUGADOR/A',
+              'P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8',
+              'P1-P6',
+              'TOTAL',
+              'VALIDACIÓ REGLAMENTÀRIA'
+            ]];
+
+            const body = [];
+            for (let i = 0; i < totalPlayerRows; i++) {
+              const player = players.value[i];
+              if (player) {
+                const periods = [];
+                for (let p = 1; p <= 8; p++) {
+                  const st = getCellStatus(player.id, p);
+                  if (st === 'start') periods.push('X');
+                  else if (st === 'sub_in') periods.push('SUB');
+                  else if (st === 'sub_out') periods.push('CANV');
+                  else if (st === 'injury') periods.push('LESIÓ');
+                  else if (st === 'foul_out') periods.push('5F');
+                  else periods.push('-');
+                }
+                const p1p6Summary = getPlayerP1P6TotalPlayed(player.id).toString();
+                const total = getPlayerTotalCount(player.id).toString();
+                const validationMsg = getPlayerValidation(player).message;
+
+                body.push([
+                  player.dorsal !== undefined && player.dorsal !== '' ? player.dorsal.toString() : '',
+                  player.name || '',
+                  ...periods,
+                  p1p6Summary,
+                  total,
+                  validationMsg
+                ]);
+              } else {
+                body.push(['', '', '', '', '', '', '', '', '', '', '', '', '']);
+              }
+            }
+
+            doc.autoTable({
+              head: head,
+              body: body,
+              startY: margin,
+              margin: { top: margin, right: margin, bottom: margin, left: margin },
+              tableWidth: pageWidth - (margin * 2),
+              theme: 'grid',
+              styles: {
+                font: 'helvetica',
+                fontSize: 9.5,
+                textColor: [15, 23, 42],
+                lineColor: [0, 0, 0],
+                lineWidth: 0.35,
+                valign: 'middle',
+                halign: 'center',
+                minCellHeight: rowHeight,
+                cellPadding: 1
+              },
+              headStyles: {
+                fillColor: [226, 232, 240],
+                textColor: [0, 0, 0],
+                fontStyle: 'bold',
+                fontSize: 9.5,
+                minCellHeight: rowHeight
+              },
+              columnStyles: {
+                0: { cellWidth: 14, fontStyle: 'bold', fontSize: 11 }, // DOR
+                1: { cellWidth: 58, halign: 'left', fontStyle: 'bold' }, // NOM
+                2: { cellWidth: 13 }, // P1
+                3: { cellWidth: 13 }, // P2
+                4: { cellWidth: 13 }, // P3
+                5: { cellWidth: 13 }, // P4
+                6: { cellWidth: 13 }, // P5
+                7: { cellWidth: 13 }, // P6
+                8: { cellWidth: 13 }, // P7
+                9: { cellWidth: 13 }, // P8
+                10: { cellWidth: 22, fontStyle: 'bold' }, // P1-P6
+                11: { cellWidth: 16, fontStyle: 'bold' }, // TOTAL
+                12: { cellWidth: 'auto', halign: 'left', fontSize: 8.5 } // VALIDACIÓ
+              },
+              didParseCell: function(data) {
+                // Destacar visualment els estats a les cel·les dels períodes
+                if (data.section === 'body' && data.column.index >= 2 && data.column.index <= 9) {
+                  const val = data.cell.raw;
+                  if (val === 'X') {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fontSize = 11;
+                    data.cell.styles.fillColor = [236, 253, 245];
+                  } else if (val === 'SUB' || val === 'CANV') {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [239, 246, 255];
+                  } else if (val === 'LESIÓ') {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.fillColor = [254, 243, 199];
+                  } else if (val === '5F') {
+                    data.cell.styles.fontStyle = 'bold';
+                    data.cell.styles.textColor = [185, 28, 28];
+                    data.cell.styles.fillColor = [254, 226, 226];
+                  }
+                }
+              }
+            });
+
+            doc.save('alineacio_fcbq.pdf');
+            showNotification('PDF descarregat correctament en 1 sola pàgina.', 'success');
+          } catch (err) {
+            console.error(err);
+            showNotification('Hi ha hagut un error en generar el PDF.', 'warning');
+          }
+        };
+
+        return {
+          players,
+          lineups,
+          newDorsal,
+          newName,
+          selectedTool,
+          activeCellMenu,
+          subModal,
+          showRulesModal,
+          notification,
+          addPlayer,
+          removePlayer,
+          resetLineups,
+          clearAll,
+          getCellStatus,
+          setCellStatus,
+          confirmSubstituteSelection,
+          eligibleSubstitutes,
+          handleCellClick,
+          openCellContextMenu,
+          getPlayerById,
+          getPeriodStartCourtCount,
+          getPeriodEndCourtCount,
+          getPeriodSubInCount,
+          getPeriodSubOutCount,
+          isPeriodValidCourtCount,
+          getPeriodBadgeText,
+          getPeriodShortBadgeText,
+          getPeriodBadgeClass,
+          getPeriodStatusTooltip,
+          getPlayerP1P6TotalPlayed,
+          getPlayerStartedP1P6Count,
+          getPlayerTotalCount,
+          getPlayerValidation,
+          validationMessages,
+          globalStatus,
+          globalStatusMessage,
+          getPlayerRowClass,
+          getStickyCellBg,
+          getPlayerP1P6BadgeClass,
+          getPlayerP1P6CompactBadgeClass,
+          downloadPDF
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
